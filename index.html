@@ -302,7 +302,11 @@
           let pdfJsDoc = null;
           if (typeof pdfjsLib !== 'undefined') {
             try {
-              pdfJsDoc = await pdfjsLib.getDocument({ data: pdfBytes.slice(0) }).promise;
+              const loadTask = pdfjsLib.getDocument({ data: new Uint8Array(pdfBytes.slice(0)), disableWorker: true });
+              pdfJsDoc = await Promise.race([
+                loadTask.promise,
+                new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+              ]);
             } catch {}
           }
 
