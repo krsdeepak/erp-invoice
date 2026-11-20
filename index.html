@@ -297,8 +297,14 @@
           const pdfBytes = await file.arrayBuffer();
           const pdfDoc = await PDFLib.PDFDocument.load(pdfBytes);
           const pages = pdfDoc.getPages();
-          const targetPage = pages[0];
-          const { width: pageW, height: pageH } = targetPage.getSize();
+
+          // Load with pdf.js to auto-detect "Authorised Signatory" position on each page
+          let pdfJsDoc = null;
+          if (typeof pdfjsLib !== 'undefined') {
+            try {
+              pdfJsDoc = await pdfjsLib.getDocument({ data: pdfBytes.slice(0) }).promise;
+            } catch {}
+          }
 
           const base64 = sig.split(',')[1];
           const binStr = atob(base64);
@@ -307,10 +313,8 @@
           const sigImage = await pdfDoc.embedPng(sigBytes);
           const sigDims = sigImage.scale(1);
 
-          const font = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
-          const signedAt = new Date().toISOString();
-
-          for (const targetPage of pages) {
+          for (let i = 0; i < pages.length; i++) {
+            const targetPage = pages[i];
             const { width: pageW } = targetPage.getSize();
             const maxW = pageW * 0.20;
             const maxH = 34;
@@ -318,9 +322,27 @@
             const drawW = sigDims.width * scale;
             const drawH = sigDims.height * scale;
 
-            // Bottom-right between "For KRS INVESTMENT LTD." and "Authorised Signatory"
-            const pdfX = pageW - drawW - (pageW * 0.04);
-            const pdfY = 84;
+            // Default fallback position
+            let pdfX = pageW - drawW - (pageW * 0.04);
+            let pdfY = 84;
+
+            // Auto-detect "Authorised Signatory" on this page
+            if (pdfJsDoc) {
+              try {
+                const jsPage = await pdfJsDoc.getPage(i + 1);
+                const textContent = await jsPage.getTextContent();
+                const match = textContent.items.find(item =>
+                  item.str && item.str.toLowerCase().includes('authorised signatory')
+                );
+                if (match && match.transform) {
+                  const textX = match.transform[4];
+                  const textY = match.transform[5];
+                  const textW = match.width || 90;
+                  pdfX = Math.min(pageW - drawW - 14, Math.max(14, textX + (textW - drawW) / 2));
+                  pdfY = textY + 12;
+                }
+              } catch {}
+            }
 
             targetPage.drawImage(sigImage, {
               x: pdfX,
@@ -707,5 +729,5 @@
       renderDashboard();
     }
   </script>
-<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a5d043cb789ef9bd',t:'MTc5NTEwMjMxNw=='};var l=window.parent.location,o;try{o=new URL(l.origin).origin}catch(e){try{o=new URL(new URL(l.href).origin).origin}catch(e){o=''}}var u='/cdn-cgi/challenge-platform/scripts/jsd/main.js?ray=a5d043cb789ef9bd',a=document.createElement('script');a.src=o?new URL(u,o).href:u;document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>
